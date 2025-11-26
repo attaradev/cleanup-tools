@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # Where this script lives
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -252,11 +252,16 @@ delete_path "$VSCODE_BASE/CachedExtensionVSIXs"
 # --- Docker prune (safe) ---
 if command -v docker >/dev/null 2>&1; then
   echo "🐳 Cleaning Docker unused resources (safe)..."
-  run_cmd docker system prune -f || true
+  # Check if Docker daemon is responsive (5 second timeout)
+  if timeout 5 docker info >/dev/null 2>&1; then
+    run_cmd docker system prune -f || true
 
-  if [ "$DEEP" -eq 1 ]; then
-    echo "🐳 DEEP: Pruning unused Docker images & volumes..."
-    run_cmd docker system prune -af --volumes || true
+    if [ "$DEEP" -eq 1 ]; then
+      echo "🐳 DEEP: Pruning unused Docker images & volumes..."
+      run_cmd docker system prune -af --volumes || true
+    fi
+  else
+    echo "⚠️  Docker daemon not responding, skipping Docker cleanup"
   fi
 fi
 
@@ -287,9 +292,15 @@ shopt -u nullglob || true
 echo "🧹 Removing .DS_Store files..."
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "DRY RUN: would remove these .DS_Store files:"
-  find "$HOME" -name '.DS_Store' -print 2>/dev/null || true
+  # Limit to common development directories to avoid scanning entire home
+  for dir in "$HOME/Documents" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Projects" "$HOME/src" "$HOME/dev"; do
+    [ -d "$dir" ] && find "$dir" -name '.DS_Store' -print 2>/dev/null || true
+  done
 else
-  find "$HOME" -name '.DS_Store' -exec rm -f {} + 2>/dev/null || true
+  # Limit to common development directories to avoid scanning entire home
+  for dir in "$HOME/Documents" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Projects" "$HOME/src" "$HOME/dev"; do
+    [ -d "$dir" ] && find "$dir" -name '.DS_Store' -exec rm -f {} + 2>/dev/null || true
+  done
 fi
 
 echo "✨ Cleanup steps finished."
@@ -297,10 +308,24 @@ echo "✨ Cleanup steps finished."
 # --- Report disk usage ---
 if [ "$REPORT" -eq 1 ]; then
   echo
-  echo "📊 Disk usage summary (top-level under \$HOME):"
-  du -sh "$HOME" 2>/dev/null || true
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📊 Disk Usage Report"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo
-  du -sh "$HOME"/* 2>/dev/null | sort -h || true
+  echo "📁 Top 20 Largest Directories:"
+  echo
+
+  # Get and format directory sizes
+  du -sh "$HOME"/* 2>/dev/null | sort -h | tail -20 | \
+    awk -v home="$HOME" '{
+      # Extract just the directory name from the path
+      path = $2
+      gsub(home"/", "", path)
+      printf "  %-45s %10s\n", path, $1
+    }' || true
+
+  echo
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 fi
 
 echo "✅ Done."
