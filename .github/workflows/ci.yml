@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    name: Lint and Test
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: brew install shellcheck
+
+      - name: Run ShellCheck
+        run: shellcheck cleanup
+
+      - name: Check script syntax
+        run: bash -n cleanup
+
+      - name: Test --version flag
+        run: ./cleanup --version
+
+      - name: Test --help flag
+        run: ./cleanup --help
+
+      - name: Test --dry-run mode
+        run: ./cleanup --dry-run
+
+      - name: Test version command (dry-run)
+        run: |
+          # Test that version commands are properly recognized
+          if ! ./cleanup version 2>&1 | grep -q "Usage: cleanup version"; then
+            echo "Version command validation failed"
+            exit 1
+          fi
+          echo "✅ Version command structure validated"

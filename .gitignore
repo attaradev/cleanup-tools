@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Cleanup tool logs
+.cleanup/
+
+# Testing
+test-results/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Notarization artifacts
+*.zip
+*.tar.gz
+gon.hcl
+dist/
+
+# IDE & Tools
+.vscode/
+.idea/
+*.sublime-*
+.claude/
+
+# Environment
+.env
+.env.local

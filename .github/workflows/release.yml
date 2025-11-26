@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Install gon for notarization
+        run: brew install mitchellh/gon/gon
+
+      - name: Create release archive
+        run: |
+          mkdir -p dist
+          cp cleanup dist/
+          chmod +x dist/cleanup
+          tar -czf cleanup-${{ steps.get_version.outputs.VERSION }}-macos.tar.gz -C dist cleanup
+
+      - name: Sign and notarize (if secrets available)
+        if: ${{ env.AC_PASSWORD != '' }}
+        env:
+          AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
+          AC_USERNAME: ${{ secrets.AC_USERNAME }}
+          AC_TEAM_ID: ${{ secrets.AC_TEAM_ID }}
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+        run: |
+          # Create gon config for notarization
+          cat > gon.hcl <<EOF
+          source = ["dist/cleanup"]
+          bundle_id = "dev.attara.cleanup"
+
+          sign {
+            application_identity = "$CODESIGN_IDENTITY"
+          }
+
+          zip {
+            output_path = "cleanup-notarized.zip"
+          }
+
+          apple_id {
+            username = "$AC_USERNAME"
+            password = "$AC_PASSWORD"
+            provider = "$AC_TEAM_ID"
+          }
+          EOF
+
+          # Run notarization
+          gon gon.hcl || echo "⚠️ Notarization failed - continuing without notarization"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          PREVIOUS_TAG=$(git tag --sort=-creatordate | sed -n '2p')
+          if [ -z "$PREVIOUS_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          # Write changelog to file for multiline handling
+          cat > changelog.txt <<EOF
+          ## What's Changed
+
+          $CHANGELOG
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...v${{ steps.get_version.outputs.VERSION }}
+          EOF
+
+          echo "Generated changelog for release"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release v${{ steps.get_version.outputs.VERSION }}
+          body_path: changelog.txt
+          files: |
+            cleanup-${{ steps.get_version.outputs.VERSION }}-macos.tar.gz
+            cleanup-notarized.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        if: ${{ env.TAP_REPO_TOKEN != '' }}
+        env:
+          TAP_REPO_TOKEN: ${{secrets.TAP_REPO_TOKEN}}
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+        run: |
+          # Calculate SHA256 of the release archive
+          SHA256=$(shasum -a 256 cleanup-${VERSION}-macos.tar.gz | awk '{print $1}')
+
+          # Clone the tap repository
+          git clone https://x-access-token:${TAP_REPO_TOKEN}@github.com/attara/homebrew-cleanup.git tap-repo
+          cd tap-repo
+
+          # Update formula
+          cat > Formula/cleanup.rb <<EOF
+          class Cleanup < Formula
+            desc "macOS dev-machine cleanup helper"
+            homepage "https://github.com/attaradev/cleanup-tools"
+            url "https://github.com/attaradev/cleanup-tools/releases/download/v${VERSION}/cleanup-${VERSION}-macos.tar.gz"
+            sha256 "${SHA256}"
+            version "${VERSION}"
+            license "MIT"
+
+            def install
+              bin.install "cleanup"
+            end
+
+            test do
+              system "#{bin}/cleanup", "--version"
+            end
+          end
+          EOF
+
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/cleanup.rb
+          git commit -m "chore: update cleanup to ${VERSION}"
+          git push origin main

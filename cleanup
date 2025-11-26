@@ -38,6 +38,7 @@ usage() {
 cleanup $VERSION
 
 Usage: cleanup [options]
+       cleanup version [patch|minor|major]
 
 Options:
   --dry-run       Show what would be cleaned, but don't delete anything
@@ -47,7 +48,63 @@ Options:
   --version       Print the cleanup version and exit
   --self-update   Update this script from its git remote (if in a git repo)
   -h, --help      Show this help
+
+Version Management:
+  version patch   Bump patch version (e.g. 0.2.0 -> 0.2.1)
+  version minor   Bump minor version (e.g. 0.2.0 -> 0.3.0)
+  version major   Bump major version (e.g. 0.2.0 -> 1.0.0)
 EOF
+}
+
+bump_version() {
+  local bump_type="$1"
+  local script_file="${BASH_SOURCE[0]}"
+
+  # Parse current version
+  IFS='.' read -r major minor patch <<< "$VERSION"
+
+  case "$bump_type" in
+    patch)
+      patch=$((patch + 1))
+      ;;
+    minor)
+      minor=$((minor + 1))
+      patch=0
+      ;;
+    major)
+      major=$((major + 1))
+      minor=0
+      patch=0
+      ;;
+    *)
+      echo "❌ Invalid bump type: $bump_type. Use: patch, minor, or major"
+      return 1
+      ;;
+  esac
+
+  local new_version="${major}.${minor}.${patch}"
+
+  echo "📦 Bumping version from $VERSION to $new_version"
+
+  # Update version in script
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/^VERSION=\".*\"/VERSION=\"$new_version\"/" "$script_file"
+  else
+    sed -i "s/^VERSION=\".*\"/VERSION=\"$new_version\"/" "$script_file"
+  fi
+
+  # Check if in git repo
+  if command -v git >/dev/null 2>&1 && [ -d "$SCRIPT_DIR/.git" ]; then
+    echo "📝 Creating git commit and tag..."
+    git add "$script_file"
+    git commit -m "chore: bump version to $new_version"
+    git tag -a "v$new_version" -m "Release version $new_version"
+    echo "✅ Version bumped to $new_version"
+    echo "💡 Push with: git push && git push --tags"
+  else
+    echo "✅ Version bumped to $new_version in script"
+    echo "⚠️  Not in a git repository - no commit/tag created"
+  fi
 }
 
 self_update() {
@@ -73,6 +130,16 @@ REPORT=${CLEANUP_DEFAULT_REPORT:-0}
 SELF_UPDATE=0
 
 # ----- Parse args -----
+# Handle 'cleanup version [patch|minor|major]' subcommand first
+if [ "${1:-}" = "version" ]; then
+  if [ -z "${2:-}" ]; then
+    echo "❌ Usage: cleanup version [patch|minor|major]"
+    exit 1
+  fi
+  bump_version "$2"
+  exit $?
+fi
+
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
