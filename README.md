@@ -45,29 +45,51 @@ See the [Quick Start Guide](docs/QUICK_START.md) for detailed installation instr
 
 ### Basic Commands
 
+Run normal cleanup:
+
 ```bash
-# Run normal cleanup
 cleanup
+```
 
-# Preview what would be cleaned (recommended first run)
+Preview what would be cleaned (recommended first run):
+
+```bash
 cleanup --dry-run
+```
 
-# Ask for confirmation before running
+Ask for confirmation before running:
+
+```bash
 cleanup --confirm
+```
 
-# Run deeper cleanup (includes Docker volumes/images)
+Run deeper cleanup (includes Docker volumes/images):
+
+```bash
 cleanup --deep
+```
 
-# Show disk usage report after cleanup
+Show disk usage report after cleanup:
+
+```bash
 cleanup --report
+```
 
-# Show version
+Show version:
+
+```bash
 cleanup --version
+```
 
-# Show help
+Show help:
+
+```bash
 cleanup --help
+```
 
-# Update from git repository
+Update from git repository:
+
+```bash
 cleanup --self-update
 ```
 
