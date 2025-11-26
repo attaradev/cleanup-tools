@@ -31,3 +31,7 @@ dist/
 # Environment
 .env
 .env.local
+
+# Research
+docs/COMPETITIVE_ANALYSIS.md
+docs/RESEARCH_NOTES.md
