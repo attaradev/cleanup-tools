@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/logo.svg" alt="cleanup logo" width="200" />
+</div>
+
 # cleanup
 
 A powerful macOS development machine cleanup helper that safely removes caches, temporary files, and unused resources to free up disk space.
