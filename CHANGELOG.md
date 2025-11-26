@@ -7,19 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-11-26
+
 ### Added
 
-- Automatic semantic versioning with `cleanup version [patch|minor|major]` command
-- GitHub Actions CI pipeline for linting and testing
-- GitHub Releases automation
-- Homebrew tap support (`brew install attara/cleanup/cleanup`)
-- macOS notarization support in CI pipeline
-- Comprehensive documentation (README, setup guides)
+- Docker daemon responsiveness check with 5-second timeout to prevent hanging
+- Improved disk usage report with better visual formatting
+- Top 20 largest directories display with aligned columns
 
 ### Changed
 
-- Enhanced usage documentation with version management examples
-- Improved error handling in version bumping
+- Limited `.DS_Store` cleanup to specific directories (Documents, Desktop, Downloads, Projects, src, dev) for faster execution
+- Enhanced report UX with decorative separators and cleaner layout
+- Docker cleanup now skips gracefully when daemon is not responding
+
+### Fixed
+
+- Script no longer hangs when Docker daemon is unresponsive
+- `.DS_Store` cleanup is significantly faster by avoiding full home directory scan
 
 ## [0.2.0] - 2025-01-26
 
