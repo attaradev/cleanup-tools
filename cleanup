@@ -3,18 +3,22 @@
 # macOS dev-machine cleanup helper
 #
 # Usage:
-#   cleanup                       # normal cleanup
-#   cleanup --dry-run             # show what would be done
-#   cleanup --confirm             # ask before executing
-#   cleanup --deep                # more aggressive Docker cleanup
-#   cleanup --report              # show disk usage report after cleanup
-#   cleanup --version             # show version
-#   cleanup --self-update         # git-based self update (if script lives in a git repo)
+#   cleanup                   # normal cleanup
+#   cleanup -n                # show what would be done with size estimates
+#   cleanup -c                # ask before executing
+#   cleanup -d                # more aggressive Docker cleanup
+#   cleanup -r                # show disk usage report after cleanup
+#   cleanup -o=tool1,tool2    # clean only specific tools
+#   cleanup -s=tool1,tool2    # skip specific tools
+#   cleanup -t                # list available cleanup targets
+#   cleanup -T                # move to trash instead of deleting
+#   cleanup -v                # show version
+#   cleanup -u                # git-based self update (if script lives in a git repo)
 #
 
-set -euo pipefail
+set -eo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 # Where this script lives
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -23,9 +27,47 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CLEANUP_DEFAULT_CONFIRM=${CLEANUP_DEFAULT_CONFIRM:-0}
 CLEANUP_DEFAULT_DEEP=${CLEANUP_DEFAULT_DEEP:-0}
 CLEANUP_DEFAULT_REPORT=${CLEANUP_DEFAULT_REPORT:-1}
+CLEANUP_USE_TRASH=${CLEANUP_USE_TRASH:-0}
 CLEANUP_LOGGING=${CLEANUP_LOGGING:-1}
 CLEANUP_LOG_DIR=${CLEANUP_LOG_DIR:-"$HOME/.cleanup/logs"}
 CLEANUP_CONFIG_FILE=${CLEANUP_CONFIG_FILE:-"$HOME/.cleanup.conf"}
+
+# ----- Available cleanup tools (for selective cleanup) -----
+# Using arrays compatible with bash 3.2 (macOS default)
+CLEANUP_TOOLS_LIST="homebrew npm pnpm yarn pip rubygems cargo go gradle maven composer cocoapods xcode android jetbrains vscode docker zsh jcef dsstore"
+
+# Tool descriptions
+get_tool_description() {
+  case "$1" in
+    homebrew) echo "Homebrew package cache" ;;
+    npm) echo "npm package cache" ;;
+    pnpm) echo "pnpm package cache" ;;
+    yarn) echo "Yarn package cache" ;;
+    pip) echo "Python pip cache" ;;
+    rubygems) echo "RubyGems cache" ;;
+    cargo) echo "Rust Cargo cache" ;;
+    go) echo "Go build cache" ;;
+    gradle) echo "Gradle build cache" ;;
+    maven) echo "Maven repository cache" ;;
+    composer) echo "PHP Composer cache" ;;
+    cocoapods) echo "CocoaPods cache" ;;
+    xcode) echo "Xcode DerivedData" ;;
+    android) echo "Android build cache" ;;
+    jetbrains) echo "JetBrains IDEs cache" ;;
+    vscode) echo "VSCode cache" ;;
+    docker) echo "Docker unused resources" ;;
+    zsh) echo "ZSH compdump files" ;;
+    jcef) echo "JCEF log files" ;;
+    dsstore) echo ".DS_Store files" ;;
+    *) echo "Unknown tool" ;;
+  esac
+}
+
+# Initialize all tools as enabled
+CLEANUP_ENABLED=""
+for tool in $CLEANUP_TOOLS_LIST; do
+  CLEANUP_ENABLED="$CLEANUP_ENABLED $tool"
+done
 
 # ----- Load optional config file -----
 if [ -f "$CLEANUP_CONFIG_FILE" ]; then
@@ -41,19 +83,42 @@ Usage: cleanup [options]
        cleanup version [patch|minor|major]
 
 Options:
-  --dry-run       Show what would be cleaned, but don't delete anything
-  --confirm       Ask for confirmation before running
-  --deep          Run deeper cleanup (e.g. Docker volumes & images)
-  --report        Show a disk usage summary after cleanup
-  --version       Print the cleanup version and exit
-  --self-update   Update this script from its git remote (if in a git repo)
-  -h, --help      Show this help
+  -n, --dry-run            Show what would be cleaned with size estimates
+  -c, --confirm            Ask for confirmation before running
+  -d, --deep               Run deeper cleanup (e.g. Docker volumes & images)
+  -r, --report             Show a disk usage summary after cleanup
+  -o, --only=tool1,tool2   Clean only specified tools (comma-separated)
+  -s, --skip=tool1,tool2   Skip specified tools (comma-separated)
+  -t, --tools              List all available cleanup targets
+  -T, --use-trash          Move files to trash instead of deleting
+  -v, --version            Print the cleanup version and exit
+  -u, --self-update        Update this script from its git remote (if in a git repo)
+  -h, --help               Show this help
 
 Version Management:
   version patch   Bump patch version (e.g. 0.2.0 -> 0.2.1)
   version minor   Bump minor version (e.g. 0.2.0 -> 0.3.0)
   version major   Bump major version (e.g. 0.2.0 -> 1.0.0)
+
+Examples:
+  cleanup -n                     # Preview what will be cleaned
+  cleanup -o=docker,npm          # Clean only Docker and npm
+  cleanup -s=xcode -r            # Clean everything except Xcode, show report
+  cleanup -T -c                  # Safe cleanup with trash and confirmation
+  cleanup -d -r                  # Deep cleanup with report
 EOF
+}
+
+list_tools() {
+  echo "Available cleanup targets:"
+  echo
+  printf "%-15s %s\n" "TOOL" "DESCRIPTION"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  for tool in $CLEANUP_TOOLS_LIST; do
+    printf "%-15s %s\n" "$tool" "$(get_tool_description "$tool")"
+  done
+  echo
+  echo "Usage: cleanup --only=tool1,tool2 or cleanup --skip=tool1"
 }
 
 bump_version() {
@@ -127,7 +192,10 @@ DRY_RUN=0
 CONFIRM=${CLEANUP_DEFAULT_CONFIRM:-0}
 DEEP=${CLEANUP_DEFAULT_DEEP:-0}
 REPORT=${CLEANUP_DEFAULT_REPORT:-0}
+USE_TRASH=${CLEANUP_USE_TRASH:-0}
 SELF_UPDATE=0
+ONLY_TOOLS=""
+SKIP_TOOLS=""
 
 # ----- Parse args -----
 # Handle 'cleanup version [patch|minor|major]' subcommand first
@@ -142,15 +210,23 @@ fi
 
 for arg in "$@"; do
   case "$arg" in
-    --dry-run) DRY_RUN=1 ;;
-    --confirm) CONFIRM=1 ;;
-    --deep) DEEP=1 ;;
-    --report) REPORT=1 ;;
-    --version)
+    -n|--dry-run) DRY_RUN=1 ;;
+    -c|--confirm) CONFIRM=1 ;;
+    -d|--deep) DEEP=1 ;;
+    -r|--report) REPORT=1 ;;
+    -T|--use-trash) USE_TRASH=1 ;;
+    -t|--tools) list_tools; exit 0 ;;
+    -o=*|--only=*)
+      ONLY_TOOLS="${arg#*=}"
+      ;;
+    -s=*|--skip=*)
+      SKIP_TOOLS="${arg#*=}"
+      ;;
+    -v|--version)
       echo "cleanup $VERSION"
       exit 0
       ;;
-    --self-update) SELF_UPDATE=1 ;;
+    -u|--self-update) SELF_UPDATE=1 ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "Unknown option: $arg" >&2
@@ -159,6 +235,56 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# Check if a tool is in the list
+is_valid_tool() {
+  local search="$1"
+  for tool in $CLEANUP_TOOLS_LIST; do
+    if [ "$tool" = "$search" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Process --only and --skip flags
+if [ -n "$ONLY_TOOLS" ]; then
+  # Disable all tools first
+  CLEANUP_ENABLED=""
+  # Enable only specified tools
+  IFS=',' read -r tool1 tool2 tool3 tool4 tool5 tool6 tool7 tool8 tool9 tool10 <<< "$ONLY_TOOLS"
+  for tool in "$tool1" "$tool2" "$tool3" "$tool4" "$tool5" "$tool6" "$tool7" "$tool8" "$tool9" "$tool10"; do
+    [ -z "$tool" ] && continue
+    tool=$(echo "$tool" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') # trim whitespace
+    if is_valid_tool "$tool"; then
+      CLEANUP_ENABLED="$CLEANUP_ENABLED $tool"
+    else
+      echo "⚠️  Unknown tool: $tool (use --tools to see available options)"
+      exit 1
+    fi
+  done
+fi
+
+if [ -n "$SKIP_TOOLS" ]; then
+  IFS=',' read -r tool1 tool2 tool3 tool4 tool5 tool6 tool7 tool8 tool9 tool10 <<< "$SKIP_TOOLS"
+  for skip_tool in "$tool1" "$tool2" "$tool3" "$tool4" "$tool5" "$tool6" "$tool7" "$tool8" "$tool9" "$tool10"; do
+    [ -z "$skip_tool" ] && continue
+    skip_tool=$(echo "$skip_tool" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') # trim whitespace
+    if is_valid_tool "$skip_tool"; then
+      # Remove from enabled list
+      NEW_ENABLED=""
+      for tool in $CLEANUP_ENABLED; do
+        if [ "$tool" != "$skip_tool" ]; then
+          NEW_ENABLED="$NEW_ENABLED $tool"
+        fi
+      done
+      CLEANUP_ENABLED="$NEW_ENABLED"
+    else
+      echo "⚠️  Unknown tool: $skip_tool (use --tools to see available options)"
+      exit 1
+    fi
+  done
+fi
 
 # Self-update takes precedence and then exits
 if [ "$SELF_UPDATE" -eq 1 ]; then
@@ -190,9 +316,53 @@ if [ "$DRY_RUN" -eq 0 ] && [ "${CLEANUP_LOGGING:-1}" -eq 1 ]; then
   echo "📁 Logging to: $LOG_FILE"
 fi
 
+# ----- Helper functions -----
+
+# Get size of a path in bytes (returns 0 if path doesn't exist)
+get_size_bytes() {
+  local target="$1"
+  if [ ! -e "$target" ]; then
+    echo "0"
+    return 0
+  fi
+
+  local size
+  size=$(du -sk "$target" 2>/dev/null | awk '{print $1}')
+  echo "$((size * 1024))"
+}
+
+# Format bytes to human readable
+format_bytes() {
+  local bytes=$1
+  if [ "$bytes" -lt 1024 ]; then
+    echo "${bytes}B"
+  elif [ "$bytes" -lt 1048576 ]; then
+    echo "$((bytes / 1024))KB"
+  elif [ "$bytes" -lt 1073741824 ]; then
+    echo "$((bytes / 1048576))MB"
+  else
+    printf "%.1fGB" "$(echo "scale=1; $bytes / 1073741824" | bc)"
+  fi
+}
+
+# Move to trash (macOS only)
+move_to_trash() {
+  local target="$1"
+  if [ ! -e "$target" ]; then
+    return 0
+  fi
+
+  if command -v trash >/dev/null 2>&1; then
+    trash "$target"
+  else
+    # Use osascript to move to trash (built-in macOS)
+    osascript -e "tell application \"Finder\" to delete POSIX file \"$target\"" >/dev/null 2>&1 || rm -rf "$target"
+  fi
+}
+
 run_cmd() {
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "DRY RUN: $*"
+    echo "  [DRY RUN] $*"
   else
     "$@"
   fi
@@ -204,106 +374,248 @@ delete_path() {
     return 0
   fi
 
+  local size_bytes
+  size_bytes=$(get_size_bytes "$target")
+
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "DRY RUN: rm -rf \"$target\""
+    local size_human
+    size_human=$(format_bytes "$size_bytes")
+    echo "  Would clean: $target ($size_human)"
+    TOTAL_SIZE=$((TOTAL_SIZE + size_bytes))
   else
-    rm -rf "$target"
+    if [ "$USE_TRASH" -eq 1 ]; then
+      move_to_trash "$target"
+    else
+      rm -rf "$target"
+    fi
+    CLEANED_SIZE=$((CLEANED_SIZE + size_bytes))
   fi
 }
 
-echo "🔍 Starting system cleanup (dry-run=$DRY_RUN, deep=$DEEP)..."
+# Check if a tool should be cleaned
+should_clean() {
+  local search="$1"
+  for tool in $CLEANUP_ENABLED; do
+    if [ "$tool" = "$search" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Track total sizes
+TOTAL_SIZE=0
+CLEANED_SIZE=0
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "🔍 Analyzing cleanup targets..."
+  echo
+else
+  echo "🧹 Starting cleanup (deep=$DEEP, trash=$USE_TRASH)..."
+  echo
+fi
 
 # --- Homebrew cleanup ---
-if command -v brew >/dev/null 2>&1; then
-  echo "🧹 Cleaning Homebrew..."
-  run_cmd brew cleanup -s || true
+if should_clean "homebrew" && command -v brew >/dev/null 2>&1; then
+  echo "🍺 Homebrew cache"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    BREW_CACHE=$(brew --cache)
+    delete_path "$BREW_CACHE"
+  else
+    run_cmd brew cleanup -s || true
+  fi
 fi
 
 # --- Node / JS tooling caches ---
-echo "🧹 Cleaning Node / JS caches..."
-if [ -d "$HOME/.npm" ]; then
-  run_cmd npm cache clean --force || true
+if should_clean "npm" && [ -d "$HOME/.npm" ]; then
+  echo "📦 npm cache"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    run_cmd npm cache clean --force || true
+  else
+    delete_path "$HOME/.npm"
+  fi
 fi
-delete_path "$HOME/Library/Caches/pnpm"
-delete_path "$HOME/Library/Caches/Yarn"
+
+if should_clean "pnpm"; then
+  echo "📦 pnpm cache"
+  delete_path "$HOME/Library/Caches/pnpm"
+fi
+
+if should_clean "yarn"; then
+  echo "📦 Yarn cache"
+  delete_path "$HOME/Library/Caches/Yarn"
+fi
 
 # --- Python pip cache ---
-echo "🐍 Cleaning Python pip cache..."
-delete_path "$HOME/Library/Caches/pip"
+if should_clean "pip"; then
+  echo "🐍 Python pip cache"
+  delete_path "$HOME/Library/Caches/pip"
+fi
 
 # --- RubyGems cache ---
-echo "💎 Cleaning RubyGems cache dirs..."
-if [ -d "$HOME/.gem" ]; then
+if should_clean "rubygems" && [ -d "$HOME/.gem" ]; then
+  echo "💎 RubyGems cache"
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "DRY RUN: would remove RubyGems cache directories under $HOME/.gem:"
-    find "$HOME/.gem" -type d -name cache -print 2>/dev/null || true
+    find "$HOME/.gem" -type d -name cache 2>/dev/null | while read -r cache_dir; do
+      delete_path "$cache_dir"
+    done
   else
     find "$HOME/.gem" -type d -name cache -exec rm -rf {} + 2>/dev/null || true
   fi
 fi
 
+# --- Rust Cargo cache ---
+if should_clean "cargo" && [ -d "$HOME/.cargo" ]; then
+  echo "🦀 Rust Cargo cache"
+  delete_path "$HOME/.cargo/registry/cache"
+  delete_path "$HOME/.cargo/git/checkouts"
+fi
+
+# --- Go build cache ---
+if should_clean "go"; then
+  echo "🐹 Go build cache"
+  if command -v go >/dev/null 2>&1; then
+    GO_CACHE=$(go env GOCACHE 2>/dev/null || echo "")
+    [ -n "$GO_CACHE" ] && delete_path "$GO_CACHE"
+  else
+    delete_path "$HOME/Library/Caches/go-build"
+  fi
+fi
+
+# --- Gradle cache ---
+if should_clean "gradle" && [ -d "$HOME/.gradle" ]; then
+  echo "🐘 Gradle cache"
+  delete_path "$HOME/.gradle/caches"
+fi
+
+# --- Maven repository ---
+if should_clean "maven" && [ -d "$HOME/.m2" ]; then
+  echo "📦 Maven repository cache"
+  delete_path "$HOME/.m2/repository"
+fi
+
+# --- PHP Composer cache ---
+if should_clean "composer"; then
+  echo "🎼 PHP Composer cache"
+  delete_path "$HOME/.composer/cache"
+  delete_path "$HOME/Library/Caches/composer"
+fi
+
+# --- CocoaPods cache ---
+if should_clean "cocoapods"; then
+  echo "🍫 CocoaPods cache"
+  delete_path "$HOME/Library/Caches/CocoaPods"
+fi
+
+# --- Xcode DerivedData ---
+if should_clean "xcode"; then
+  echo "🔨 Xcode DerivedData"
+  delete_path "$HOME/Library/Developer/Xcode/DerivedData"
+  delete_path "$HOME/Library/Developer/Xcode/Archives"
+  delete_path "$HOME/Library/Caches/com.apple.dt.Xcode"
+fi
+
+# --- Android build cache ---
+if should_clean "android"; then
+  echo "🤖 Android build cache"
+  delete_path "$HOME/.android/build-cache"
+  delete_path "$HOME/.android/cache"
+fi
+
+# --- JetBrains IDEs cache ---
+if should_clean "jetbrains"; then
+  echo "💡 JetBrains IDEs cache"
+  delete_path "$HOME/Library/Caches/JetBrains"
+fi
+
 # --- VSCode caches ---
-echo "🧠 Cleaning VSCode caches..."
-VSCODE_BASE="$HOME/Library/Application Support/Code"
-delete_path "$VSCODE_BASE/Cache"
-delete_path "$VSCODE_BASE/CachedData"
-delete_path "$VSCODE_BASE/CachedExtensionVSIXs"
+if should_clean "vscode"; then
+  echo "🧠 VSCode cache"
+  VSCODE_BASE="$HOME/Library/Application Support/Code"
+  delete_path "$VSCODE_BASE/Cache"
+  delete_path "$VSCODE_BASE/CachedData"
+  delete_path "$VSCODE_BASE/CachedExtensionVSIXs"
+fi
 
 # --- Docker prune (safe) ---
-if command -v docker >/dev/null 2>&1; then
-  echo "🐳 Cleaning Docker unused resources (safe)..."
+if should_clean "docker" && command -v docker >/dev/null 2>&1; then
+  echo "🐳 Docker unused resources"
   # Check if Docker daemon is responsive (5 second timeout)
   if timeout 5 docker info >/dev/null 2>&1; then
-    run_cmd docker system prune -f || true
-
-    if [ "$DEEP" -eq 1 ]; then
-      echo "🐳 DEEP: Pruning unused Docker images & volumes..."
-      run_cmd docker system prune -af --volumes || true
+    if [ "$DRY_RUN" -eq 0 ]; then
+      run_cmd docker system prune -f || true
+      if [ "$DEEP" -eq 1 ]; then
+        echo "  🐳 DEEP: Pruning unused images & volumes..."
+        run_cmd docker system prune -af --volumes || true
+      fi
+    else
+      echo "  [Would run docker system prune]"
     fi
   else
-    echo "⚠️  Docker daemon not responding, skipping Docker cleanup"
+    echo "  ⚠️  Docker daemon not responding, skipping"
   fi
 fi
 
 # --- ZSH compdump cleanup ---
-echo "🧹 Removing old zsh compdump files..."
-if [ "$DRY_RUN" -eq 1 ]; then
-  echo "DRY RUN: would remove:"
-  ls "$HOME"/.zcompdump-* 2>/dev/null || true
-else
-  rm -f "$HOME"/.zcompdump-* 2>/dev/null || true
+if should_clean "zsh"; then
+  echo "🐚 ZSH compdump files"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    shopt -s nullglob 2>/dev/null || true
+    for f in "$HOME"/.zcompdump-*; do
+      [ -e "$f" ] && delete_path "$f"
+    done
+    shopt -u nullglob 2>/dev/null || true
+  else
+    rm -f "$HOME"/.zcompdump-* 2>/dev/null || true
+  fi
 fi
 
 # --- JCEF logs (size 0) ---
-echo "🧹 Removing empty jcef_*.log files in home..."
-shopt -s nullglob || true
-for f in "$HOME"/jcef_*.log; do
-  if [ -e "$f" ] && [ ! -s "$f" ]; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-      echo "DRY RUN: rm \"$f\""
-    else
-      rm -f "$f"
+if should_clean "jcef"; then
+  echo "📝 Empty JCEF log files"
+  shopt -s nullglob || true
+  for f in "$HOME"/jcef_*.log; do
+    if [ -e "$f" ] && [ ! -s "$f" ]; then
+      delete_path "$f"
     fi
-  fi
-done
-shopt -u nullglob || true
+  done
+  shopt -u nullglob || true
+fi
 
 # --- .DS_Store cleanup ---
-echo "🧹 Removing .DS_Store files..."
-if [ "$DRY_RUN" -eq 1 ]; then
-  echo "DRY RUN: would remove these .DS_Store files:"
+if should_clean "dsstore"; then
+  echo "🗑️  .DS_Store files"
   # Limit to common development directories to avoid scanning entire home
   for dir in "$HOME/Documents" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Projects" "$HOME/src" "$HOME/dev"; do
-    [ -d "$dir" ] && find "$dir" -name '.DS_Store' -print 2>/dev/null || true
-  done
-else
-  # Limit to common development directories to avoid scanning entire home
-  for dir in "$HOME/Documents" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Projects" "$HOME/src" "$HOME/dev"; do
-    [ -d "$dir" ] && find "$dir" -name '.DS_Store' -exec rm -f {} + 2>/dev/null || true
+    if [ -d "$dir" ]; then
+      if [ "$DRY_RUN" -eq 1 ]; then
+        find "$dir" -name '.DS_Store' 2>/dev/null | while read -r dsfile; do
+          delete_path "$dsfile"
+        done
+      else
+        find "$dir" -name '.DS_Store' -exec rm -f {} + 2>/dev/null || true
+      fi
+    fi
   done
 fi
 
-echo "✨ Cleanup steps finished."
+echo
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  total_human=$(format_bytes "$TOTAL_SIZE")
+  echo "📊 Total space to recover: $total_human"
+  if [ "$TOTAL_SIZE" -gt 10737418240 ]; then # 10GB
+    echo "⚠️  Warning: This will free more than 10GB of data!"
+    echo "   Consider using --only to clean specific tools first."
+  fi
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo
+  echo "Run without --dry-run to perform cleanup."
+else
+  cleaned_human=$(format_bytes "$CLEANED_SIZE")
+  echo "✨ Cleanup finished!"
+  echo "💾 Space freed: $cleaned_human"
+fi
 
 # --- Report disk usage ---
 if [ "$REPORT" -eq 1 ]; then
@@ -315,8 +627,8 @@ if [ "$REPORT" -eq 1 ]; then
   echo "📁 Top 20 Largest Directories:"
   echo
 
-  # Get and format directory sizes
-  du -sh "$HOME"/* 2>/dev/null | sort -h | tail -20 | \
+  # Get and format directory sizes, sorted largest to smallest
+  du -sh "$HOME"/* 2>/dev/null | sort -hr | head -20 | \
     awk -v home="$HOME" '{
       # Extract just the directory name from the path
       path = $2

@@ -12,11 +12,16 @@ A powerful macOS development machine cleanup helper that safely removes caches, 
 ## Features
 
 - **Safe Cleanup**: Removes only caches and temporary files, never your code or data
-- **Multiple Tools**: Supports Homebrew, npm, pnpm, Yarn, pip, RubyGems, VSCode, Docker, and more
+- **20+ Development Tools**: Supports Homebrew, npm, Docker, Cargo, Go, Gradle, Maven, Xcode, JetBrains IDEs, and more
+- **Size Estimation**: Preview cleanup with accurate size calculations before deletion
+- **Selective Cleanup**: Clean only specific tools or skip tools with `--only` and `--skip` flags
 - **Dry-Run Mode**: Preview what would be cleaned before making changes
 - **Deep Cleaning**: Optional aggressive cleanup for Docker volumes and images
+- **Safety Features**: Move files to trash instead of permanent deletion, warnings for large operations
+- **Short & Long Params**: Use `-n` or `--dry-run`, `-o` or `--only`, etc.
 - **Logging**: Automatic logging of all cleanup operations
 - **Configurable**: Customize behavior via config file
+- **Zero Dependencies**: Pure bash, works on any macOS system
 - **Version Management**: Built-in semantic versioning support
 - **Auto-Update**: Self-update from git repository
 
@@ -51,64 +56,115 @@ Run normal cleanup:
 cleanup
 ```
 
-Preview what would be cleaned (recommended first run):
+Preview what would be cleaned with size estimates (recommended first run):
 
 ```bash
-cleanup --dry-run
+cleanup -n              # or cleanup --dry-run
+```
+
+List all available cleanup targets:
+
+```bash
+cleanup -t              # or cleanup --tools
+```
+
+Clean only specific tools:
+
+```bash
+cleanup -o=docker,npm   # or cleanup --only=docker,npm
+```
+
+Skip specific tools:
+
+```bash
+cleanup -s=xcode -r     # or cleanup --skip=xcode --report
 ```
 
 Ask for confirmation before running:
 
 ```bash
-cleanup --confirm
+cleanup -c              # or cleanup --confirm
 ```
 
 Run deeper cleanup (includes Docker volumes/images):
 
 ```bash
-cleanup --deep
+cleanup -d              # or cleanup --deep
 ```
 
 Show disk usage report after cleanup:
 
 ```bash
-cleanup --report
+cleanup -r              # or cleanup --report
+```
+
+Safe cleanup with trash instead of permanent deletion:
+
+```bash
+cleanup -T -c           # or cleanup --use-trash --confirm
 ```
 
 Show version:
 
 ```bash
-cleanup --version
+cleanup -v              # or cleanup --version
 ```
 
 Show help:
 
 ```bash
-cleanup --help
+cleanup -h              # or cleanup --help
 ```
 
 Update from git repository:
 
 ```bash
-cleanup --self-update
+cleanup -u              # or cleanup --self-update
 ```
 
 ## What Gets Cleaned
 
-### Always Cleaned (Safe)
+### 20+ Development Tools Supported
 
-- **Homebrew**: Old formulas and cached downloads (`brew cleanup`)
-- **npm**: Package cache (`~/.npm`)
-- **pnpm**: Package cache (`~/Library/Caches/pnpm`)
-- **Yarn**: Package cache (`~/Library/Caches/Yarn`)
-- **pip**: Python package cache (`~/Library/Caches/pip`)
-- **RubyGems**: Gem cache directories
-- **VSCode**: Cache, CachedData, CachedExtensionVSIXs
-- **Docker**: Unused containers, networks, and dangling images
-- **ZSH**: Old completion dump files (`.zcompdump-*`)
-- **System**: `.DS_Store` files, empty JCEF logs
+| Tool | What Gets Cleaned | Safe? |
+|------|-------------------|-------|
+| **homebrew** | Homebrew package cache | ✅ Yes |
+| **npm** | npm package cache (`~/.npm`) | ✅ Yes |
+| **pnpm** | pnpm package cache | ✅ Yes |
+| **yarn** | Yarn package cache | ✅ Yes |
+| **pip** | Python pip cache | ✅ Yes |
+| **rubygems** | RubyGems cache directories | ✅ Yes |
+| **cargo** | Rust Cargo registry cache | ✅ Yes |
+| **go** | Go build cache | ✅ Yes |
+| **gradle** | Gradle build cache | ✅ Yes |
+| **maven** | Maven repository cache | ✅ Yes |
+| **composer** | PHP Composer cache | ✅ Yes |
+| **cocoapods** | CocoaPods cache | ✅ Yes |
+| **xcode** | Xcode DerivedData & Archives | ✅ Yes |
+| **android** | Android build cache | ✅ Yes |
+| **jetbrains** | JetBrains IDEs cache | ✅ Yes |
+| **vscode** | VSCode cache & extensions | ✅ Yes |
+| **docker** | Unused containers/images | ✅ Yes |
+| **zsh** | ZSH completion dumps | ✅ Yes |
+| **jcef** | Empty JCEF log files | ✅ Yes |
+| **dsstore** | .DS_Store files | ✅ Yes |
 
-### Deep Cleanup (--deep flag)
+Use `cleanup -t` to see the full list with descriptions.
+
+### Selective Cleanup Examples
+
+```bash
+# Clean only Docker and npm
+cleanup -o=docker,npm
+
+# Clean everything except Xcode and JetBrains
+cleanup -s=xcode,jetbrains
+
+# Preview what specific tools would clean
+cleanup -n -o=cargo,go,gradle
+```
+
+### Deep Cleanup (-d flag)
 
 - **Docker**: ALL unused images and volumes (⚠️ use with caution)
 
@@ -121,6 +177,7 @@ Create a configuration file at `~/.cleanup.conf`:
 CLEANUP_DEFAULT_CONFIRM=0    # Ask for confirmation (0=no, 1=yes)
 CLEANUP_DEFAULT_DEEP=0       # Run deep cleanup (0=no, 1=yes)
 CLEANUP_DEFAULT_REPORT=1     # Show disk report (0=no, 1=yes)
+CLEANUP_USE_TRASH=0          # Use trash instead of rm (0=no, 1=yes)
 
 # Logging
 CLEANUP_LOGGING=1            # Enable logging (0=no, 1=yes)

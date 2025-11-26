@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-11-26
+
+### Added
+
+- **Expanded Tool Coverage**: Added 9 new development tools
+  - Rust Cargo cache cleanup
+  - Go build cache cleanup
+  - Gradle (Java) build cache
+  - Maven repository cache
+  - PHP Composer cache
+  - CocoaPods (iOS) cache
+  - Xcode DerivedData and Archives
+  - Android build cache
+  - JetBrains IDEs cache (IntelliJ, WebStorm, etc.)
+- **Size Estimation**: Dry-run mode now shows accurate size estimates for each cleanup target
+- **Selective Cleanup**: New `--only` and `--skip` flags for targeted cleaning
+  - `--only=tool1,tool2` - Clean only specified tools
+  - `--skip=tool1,tool2` - Skip specific tools
+- **Tool Listing**: New `--tools` flag to list all available cleanup targets with descriptions
+- **Safety Features**:
+  - `--use-trash` flag to move files to trash instead of permanent deletion
+  - Warning when cleanup would free more than 10GB of data
+  - Total space recovery calculation and display
+- **Short Parameter Keys**: All flags now support both long and short forms
+  - `-n` / `--dry-run`, `-c` / `--confirm`, `-d` / `--deep`
+  - `-r` / `--report`, `-o` / `--only`, `-s` / `--skip`
+  - `-t` / `--tools`, `-T` / `--use-trash`, `-v` / `--version`
+  - `-u` / `--self-update`, `-h` / `--help`
+
+### Changed
+
+- Disk usage report now sorts directories in descending order (largest first)
+- Report header clarified: "Top 20 Largest Directories (descending)"
+- Improved output formatting with better visual hierarchy
+- Enhanced progress feedback during cleanup operations
+- Updated help text with short parameter examples
+- Better Bash 3.2 compatibility (macOS default bash version)
+
+### Fixed
+
+- Removed duplicate Go cache cleanup entries
+- Fixed local variable usage outside functions (bash 3.2 compatibility)
+- Improved error handling for tool-specific cleanups
+
+### Performance
+
+- Size calculations are now only performed during dry-run mode
+- More efficient tool selection with selective cleanup flags
+
 ## [0.3.0] - 2025-11-26
 
 ### Added
