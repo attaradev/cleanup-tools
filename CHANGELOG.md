@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-11-27
+
+### Changed
+
+- Disk usage report now opt-in only (shown only with `--report` flag)
+- Report rendering improved to display complete output at once
+- Added `ROADMAP_STATUS.md` to gitignore
+
 ## [0.4.0] - 2025-11-26
 
 ### Added

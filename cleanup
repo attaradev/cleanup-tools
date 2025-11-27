@@ -18,7 +18,7 @@
 
 set -eo pipefail
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 
 # Where this script lives
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -26,7 +26,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # ----- Config defaults (can be overridden in ~/.cleanup.conf) -----
 CLEANUP_DEFAULT_CONFIRM=${CLEANUP_DEFAULT_CONFIRM:-0}
 CLEANUP_DEFAULT_DEEP=${CLEANUP_DEFAULT_DEEP:-0}
-CLEANUP_DEFAULT_REPORT=${CLEANUP_DEFAULT_REPORT:-1}
+CLEANUP_DEFAULT_REPORT=${CLEANUP_DEFAULT_REPORT:-0}
 CLEANUP_USE_TRASH=${CLEANUP_USE_TRASH:-0}
 CLEANUP_LOGGING=${CLEANUP_LOGGING:-1}
 CLEANUP_LOG_DIR=${CLEANUP_LOG_DIR:-"$HOME/.cleanup/logs"}
@@ -191,7 +191,7 @@ self_update() {
 DRY_RUN=0
 CONFIRM=${CLEANUP_DEFAULT_CONFIRM:-0}
 DEEP=${CLEANUP_DEFAULT_DEEP:-0}
-REPORT=${CLEANUP_DEFAULT_REPORT:-0}
+REPORT=0  # Report only shown when explicitly requested via --report flag
 USE_TRASH=${CLEANUP_USE_TRASH:-0}
 SELF_UPDATE=0
 ONLY_TOOLS=""
@@ -619,25 +619,28 @@ fi
 
 # --- Report disk usage ---
 if [ "$REPORT" -eq 1 ]; then
-  echo
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "📊 Disk Usage Report"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo
-  echo "📁 Top 20 Largest Directories:"
-  echo
-
-  # Get and format directory sizes, sorted largest to smallest
-  du -sh "$HOME"/* 2>/dev/null | sort -hr | head -20 | \
+  # Collect report data first
+  REPORT_DATA=$(du -sh "$HOME"/* 2>/dev/null | sort -hr | head -20 | \
     awk -v home="$HOME" '{
       # Extract just the directory name from the path
       path = $2
       gsub(home"/", "", path)
       printf "  %-45s %10s\n", path, $1
-    }' || true
+    }')
 
-  echo
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  # Render complete report at once
+  cat <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Disk Usage Report
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📁 Top 20 Largest Directories:
+
+${REPORT_DATA}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
 fi
 
 echo "✅ Done."
